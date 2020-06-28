@@ -11,5 +11,7 @@
 /.venv
 /.vscode
 
+purescript_aff
+
 # purescript-python
 .pure-py/
