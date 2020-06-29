@@ -2,6 +2,6 @@
   "corefn-dir": "output",
   "data-format": "Compressed",
   "entry-module": "Main",
-  "index-mirror": "default",
+  "index-mirror": "affexpr",
   "pspy-blueprint": "pspy-blueprint"
 }

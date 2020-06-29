@@ -62,10 +62,11 @@ _THUNK_ = "Thunk"  # Primed effect, ready to invoke
 
 class _Scheduler:
     def __init__(self):
-        self.limit = 1024
+        limit = 1024
+        self.limit = limit
         self.size = 0
         self.ix = 0
-        self.queue = [None] * self.limit
+        self.queue = [None] * limit
         self.draining = False
 
     def _drain(self):
@@ -78,6 +79,21 @@ class _Scheduler:
             self.ix = (self.ix + 1) % self.limit
             thunk()
         self.draining = False
+
+    def __getitem__(self, i):
+        if i == "isDraining":
+
+            def _isDraining():
+                return self.isDraining()
+
+            return _isDraining
+        elif i == "enqueue":
+
+            def _enqueue(cb):
+                return self.enqueue(cb)
+
+            return _enqueue
+        raise ValueError("custom access exception for _Scheduler at index %s", i)
 
     def isDraining(self):
         return self.draining
@@ -107,7 +123,7 @@ class _Aff:
 class _AffCtr:
     __slots__ = ["tag"]
 
-    def __call__(self, _1, _2, _3):
+    def __call__(self, _1=None, _2=None, _3=None):
         return _Aff(self.tag, _1, _2, _3)
 
 
@@ -124,25 +140,26 @@ class _KillAll:
             return self.cb()
 
         def kill(fid):
-            def _killf(result):
-                def _1():
+            def _1(result):
+                def _2():
                     del self.kills[fid]
                     self.killCount -= 1
-                    if self.supervisor.util.isLeft(
-                        result
-                    ) and self.supervisor.util.fromLeft(result):
+                    if self.supervisor.util["isLeft"](result) and self.supervisor.util[
+                        "fromLeft"
+                    ](result):
 
-                        def _2():
-                            raise self.supervisor.util.fromLeft(result)
+                        def _ka_3():
+                            raise self.supervisor.util["fromLeft"](result)
 
-                        t = threading.Thread(target=_2)
+                        t = threading.Thread(target=_ka_3)
                         t.start()
                     if self.killCount == 0:
                         self.cb()
 
-                return _1
+                return _2
 
-            self.kills[fid] = self.supervisor.fibers[fid].kill(self.killError, _killf)()
+            self.kills[fid] = self.supervisor.fibers[fid].kill(self.killError, _1)
+            self.kills[fid]()
 
         if self.supervisor.fibers:
             for k in self.supervisor.fibers.keys():
@@ -166,6 +183,27 @@ class _Supervisor:
         self.fibers = {}
         self.fiberId = 0
         self.count = 0
+
+    def __getitem__(self, i):
+        if i == "register":
+
+            def _register(fiber):
+                return self.register(fiber)
+
+            return _register
+        elif i == "isEmpty":
+
+            def _isEmpty():
+                return self.isEmpty()
+
+            return _isEmpty
+        elif i == "killAll":
+
+            def _killAll(killError, cb):
+                return self.killAll(killError, cb)
+
+            return _killAll
+        raise ValueError("custom access exception for _Supervisor at index %s", i)
 
     def register(self, fiber):
         fid = self.fiberId
@@ -215,7 +253,7 @@ class _RunParKill:
                         def _2():
                             self.count -= 1
                             if self.count == 0:
-                                self.cb(self.runPar.result)()
+                                self.cb(result)()
 
                         return _2
 
@@ -242,7 +280,7 @@ class _RunParKill:
 
     def finalizer(self):
         if self.count == 0:
-            self.cb(self.runPar.util.right(None))()
+            self.cb(self.runPar.util["right"](None))()
         else:
             # Run the cancelation effects. We alias `count` because it's mutable.
             self.kid = 0
@@ -268,7 +306,7 @@ class _RunParJoin:
         self.kid = None
 
     def __call__(self):
-        if self.runPar.util.isLeft(self.result):
+        if self.runPar.util["isLeft"](self.result):
             self.fail = self.result
             self.step = None
         else:
@@ -299,8 +337,8 @@ class _RunParJoin:
 
             if self.head.tag == _MAP_:
                 if not self.fail:
-                    self.head._3 = self.runPar.util.right(
-                        self.head._1(self.runPar.util.fromRight(self.step))
+                    self.head._3 = self.runPar.util["right"](
+                        self.head._1(self.runPar.util["fromRight"](self.step))
                     )
                     self.step = self.head._3
                 else:
@@ -328,11 +366,12 @@ class _RunParJoin:
 
                         return _2
 
-                    self.runPar.kills[self.kid] = self.runPar.kill(
+                    self.runPar.kills[self.kid] = lambda: self.runPar.kill(
                         self.runPar.early,
                         self.head._2 if self.fail == self.lhs else self.head._1,
                         _1,
                     )
+                    self.runPar.kills[self.kid]()
 
                     if self.tmp:
                         self.tmp = False
@@ -342,9 +381,9 @@ class _RunParJoin:
                     # We can only proceed if both sides have resolved.
                     return
                 else:
-                    self.step = self.runPar.util.right(
-                        self.runPar.util.fromRight(self.lhs)(
-                            self.runPar.util.fromRight(self.rhs)
+                    self.step = self.runPar.util["right"](
+                        self.runPar.util["fromRight"](self.lhs)(
+                            self.runPar.util["fromRight"](self.rhs)
                         )
                     )
                     self.head._3 = self.step
@@ -353,17 +392,17 @@ class _RunParJoin:
                 self.lhs = self.head._1._3
                 self.rhs = self.head._2._3
                 # We can only proceed if both have resolved or we have a success
-                if ((self.lhs == _EMPTY_) and self.runPar.util.isLeft(self.rhs)) or (
-                    self.rhs == _EMPTY_ and self.runPar.util.isLeft(self.lhs)
+                if ((self.lhs == _EMPTY_) and self.runPar.util["isLeft"](self.rhs)) or (
+                    self.rhs == _EMPTY_ and self.runPar.util["isLeft"](self.lhs)
                 ):
                     return
                 # If both sides resolve with an error, we should continue with the
                 # first error
                 if (
                     (self.lhs != _EMPTY_)
-                    and self.runPar.util.isLeft(self.lhs)
+                    and self.runPar.util["isLeft"](self.lhs)
                     and (self.rhs != _EMPTY_)
-                    and self.runPar.util.isLeft(self.rhs)
+                    and self.runPar.util["isLeft"](self.rhs)
                 ):
                     self.fail = self.rhs if self.step == self.lhs else self.lhs
                     self.step = None
@@ -387,11 +426,12 @@ class _RunParJoin:
 
                         return _2
 
-                    self.runPar.kills[self.kid] = self.runPar.kill(
+                    self.runPar.kills[self.kid] = lambda: self.runPar.kill(
                         self.runPar.early,
                         self.head._2 if self.step == self.lhs else self.head._1,
                         _1,
                     )
+                    self.runPar.kills[self.kid]()
 
                     if self.tmp:
                         self.tmp = False
@@ -493,7 +533,7 @@ class _RunParCancel:
         self.newKills = None
 
     def __call__(self):
-        self.runPar.interrupt = self.runPar.util.left(self.error)
+        self.runPar.interrupt = self.runPar.util["left"](self.error)
         if self.runPar.kills:
             for kid0 in self.runPar.kills.keys():
                 self.innerKills = self.runPar.kills[kid0]
@@ -506,13 +546,13 @@ class _RunParCancel:
 
         def _1(*_ignoreArgs0):
             def _2(*_ignoreArgs1):
-                def _3():
+                def _rpc_3():
                     if self.newKills:
                         for kid in self.newKills.keys():
                             self.newKills[kid]()
-                    return __Aff.nonCanceler
+                    return nonCanceler
 
-                return _3
+                return _rpc_3
 
             return _Aff(_ASYNC_, _2)
 
@@ -578,7 +618,7 @@ class RunPar:
     # all pending branches including those that were in the process of being
     # canceled.
     def cancel(self, error, cb):
-        return _RunParCancel(error, cb, self)
+        return _RunParCancel(error, cb, self)()
 
     def __call__(self, killError):
         def _1(killCb):
@@ -601,7 +641,7 @@ _COMPLETED_ = 6  # The entire fiber has completed.
 
 
 class _Fiber:
-    def __self__(self, util, supervisor, aff):
+    def __init__(self, util, supervisor, aff):
         self.util = util
         self.supervisor = supervisor
         self.aff = aff
@@ -635,6 +675,40 @@ class _Fiber:
         self.joins = None
         self.rethrow = True
 
+    def __getitem__(self, i):
+        if i == "kill":
+
+            def _kill(error, cb):
+                return self.kill(error, cb)
+
+            return _kill
+        elif i == "join":
+
+            def _join(cb):
+                return self.join(cb)
+
+            return _join
+        elif i == "onComplete":
+
+            def _onComplete(join):
+                return self.onComplete(join)
+
+            return _onComplete
+        elif i == "isSuspended":
+
+            def _isSuspended():
+                return self.isSuspended()
+
+            return _isSuspended
+        elif i == "run":
+
+            def _run():
+                return self.run()
+
+            return _run
+
+        raise ValueError("custom access exception for _Fiber at index %s", i)
+
     # Each invocation of `run` requires a tick. When an asynchronous effect is
     # resolved, we must check that the local tick coincides with the fiber
     # tick before resuming. This prevents multiple async continuations from
@@ -660,11 +734,11 @@ class _Fiber:
                         self.btail = self.btail._2
                 except Exception as e:
                     self.status = _RETURN_
-                    self.fail = self.util.left(e)
+                    self.fail = self.util["left"](e)
                     self.step = None
 
             elif self.status == _STEP_RESULT_:
-                if self.util.isLeft(self.step):
+                if self.util["isLeft"](self.step):
                     self.status = _RETURN_
                     self.fail = self.step
                     self.step = None
@@ -672,7 +746,7 @@ class _Fiber:
                     self.status = _RETURN_
                 else:
                     self.status = _STEP_BIND_
-                    self.step = self.util.fromRight(self.step)
+                    self.step = self.util["fromRight"](self.step)
 
             elif self.status == _CONTINUE_:
                 if self.step.tag == _BIND_:
@@ -686,15 +760,15 @@ class _Fiber:
                 elif self.step.tag == _PURE_:
                     if not self.bhead:
                         self.status = _RETURN_
-                        self.step = self.util.right(self.step._1)
+                        self.step = self.util["right"](self.step._1)
                     else:
                         self.status = _STEP_BIND_
                         self.step = self.step._1
 
                 elif self.step.tag == _SYNC_:
                     self.status = _STEP_RESULT_
-                    self.step = __Aff.runSync(
-                        self.util.left, self.util.right, self.step._1
+                    self.step = runSync(
+                        self.util["left"], self.util["right"], self.step._1
                     )
 
                 elif self.step.tag == _ASYNC_:
@@ -706,7 +780,7 @@ class _Fiber:
                                 return
                             self.runTick += 1
 
-                            def _3():
+                            def _fr_3():
                                 # It's possible to interrupt the fiber between enqueuing and
                                 # resuming, so we need to check that the runTick is still
                                 # valid.
@@ -716,16 +790,16 @@ class _Fiber:
                                 self.step = result
                                 self._run(self.runTick)
 
-                            __Aff.Scheduler.enqueue(_3)
+                            Scheduler.enqueue(_fr_3)
 
                         return _2
 
-                    self.step = __Aff.runAsync(self.util.left, self.step._1, _1)
+                    self.step = runAsync(self.util["left"], self.step._1, _1)
                     return
 
                 elif self.step.tag == _THROW_:
                     self.status = _RETURN_
-                    self.fail = self.util.left(self.step._1)
+                    self.fail = self.util["left"](self.step._1)
                     self.step = None
 
                 # Enqueue the Catch so that we can call the error handler later on
@@ -788,13 +862,11 @@ class _Fiber:
                     if self.step._1:
                         tmp.run()
 
-                    self.step = self.util.right(tmp)
+                    self.step = self.util["right"](tmp)
 
                 elif self.step.tag == _SEQ_:
                     self.status = _CONTINUE_
-                    self.step = __Aff.sequential(
-                        self.util, self.supervisor, self.step._1
-                    )
+                    self.step = sequential(self.util, self.supervisor, self.step._1)
 
             elif self.status == _RETURN_:
                 self.bhead = None
@@ -832,7 +904,7 @@ class _Fiber:
                             self.status = _RETURN_
                         elif self.fail:
                             self.status = _CONTINUE_
-                            self.step = attempt._2(self.util.fromLeft(self.fail))
+                            self.step = attempt._2(self.util["fromLeft"](self.fail))
                             self.fail = None
 
                     # We cannot resume from an unmasked interrupt or exception.
@@ -850,7 +922,7 @@ class _Fiber:
                             self.bhead = attempt._1
                             self.btail = attempt._2
                             self.status = _STEP_BIND_
-                            self.step = self.util.fromRight(self.step)
+                            self.step = self.util["fromRight"](self.step)
 
                     # If we have a bracket, we should enqueue the handlers,
                     # and continue with the success branch only if the fiber has
@@ -859,7 +931,7 @@ class _Fiber:
                     elif attempt.tag == _BRACKET_:
                         self.bracketCount -= 1
                         if not self.fail:
-                            result = self.util.fromRight(self.step)
+                            result = self.util["fromRight"](self.step)
                             # We need to enqueue the Release with the same interrupt
                             # status as the Bracket that is initiating it.
                             self.attempts = _Aff(
@@ -893,16 +965,16 @@ class _Fiber:
                             and (self.interrupt != tmp)
                             and (self.bracketCount == 0)
                         ):
-                            self.step = attempt._1.killed(
-                                self.util.fromLeft(self.interrupt)
+                            self.step = attempt._1["killed"](
+                                self.util["fromLeft"](self.interrupt)
                             )(attempt._2)
                         elif self.fail:
-                            self.step = attempt._1.failed(
-                                self.util.fromLeft(self.fail)
+                            self.step = attempt._1["failed"](
+                                self.util["fromLeft"](self.fail)
                             )(attempt._2)
                         else:
-                            self.step = attempt._1.completed(
-                                self.util.fromRight(self.step)
+                            self.step = attempt._1["completed"](
+                                self.util["fromRight"](self.step)
                             )(attempt._2)
 
                         self.fail = None
@@ -928,24 +1000,24 @@ class _Fiber:
             elif self.status == _COMPLETED_:
                 if self.joins:
                     for v in self.joins.values():
-                        self.rethrow = self.rethrow and v.rethrow
-                        __Aff.runEff(v.handler(self.step))
+                        self.rethrow = self.rethrow and v["rethrow"]
+                        runEff(v["handler"](self.step))
                 self.joins = None
                 # If we have an interrupt and a fail, then the thread threw while
                 # running finalizers. This should always rethrow in a fresh stack.
                 if self.interrupt and self.fail:
 
                     def _2():
-                        raise self.util.fromLeft(self.fail)
+                        raise self.util["fromLeft"](self.fail)
 
                     t = threading.Thread(target=_2)
                     t.start()
                 # If we have an unhandled exception, and no other fiber has joined
                 # then we need to throw the exception in a fresh stack.
-                elif (self.util.isLeft(self.step)) and (self.rethrow):
+                elif (self.util["isLeft"](self.step)) and (self.rethrow):
 
                     def _2():
-                        raise self.util.fromLeft(self.step)
+                        raise self.util["fromLeft"](self.step)
 
                     t = threading.Thread(target=_2)
                     t.start()
@@ -958,8 +1030,8 @@ class _Fiber:
     def onComplete(self, join):
         def _1():
             if self.status == _COMPLETED_:
-                self.rethrow = self.rethrow and join.rethrow
-                join.handler(self.step)()
+                self.rethrow = self.rethrow and join["rethrow"]
+                join["handler"](self.step)()
 
                 def _2():
                     pass
@@ -969,7 +1041,7 @@ class _Fiber:
             jid = self.joinId
             self.joinId += 1
             self.joins = self.joins if self.joins else {}
-            self.joins[jid] = self.join
+            self.joins[jid] = join
 
             def _2():
                 if self.joins:
@@ -982,7 +1054,7 @@ class _Fiber:
     def kill(self, error, cb):
         def _1():
             if self.status == _COMPLETED_:
-                cb(self.util.right(None))()
+                cb(self.util["right"](None))()
 
                 def _2():
                     pass
@@ -990,18 +1062,18 @@ class _Fiber:
                 return _2
 
             def _2(*_ignoreArgs):
-                return cb(self.util.right(None))
+                return cb(self.util["right"](None))
 
             canceler = self.onComplete({"rethrow": False, "handler": _2})()
 
             if self.status == _SUSPENDED_:
-                self.interrupt = self.util.left(error)
+                self.interrupt = self.util["left"](error)
                 self.status = _COMPLETED_
                 self.step = self.interrupt
                 self._run(self.runTick)
             elif self.status == _PENDING_:
                 if not self.interrupt:
-                    self.interrupt = self.util.left(error)
+                    self.interrupt = self.util["left"](error)
                 if self.bracketCount == 0:
                     if self.status == _PENDING_:
                         self.attempts = _Aff(
@@ -1017,7 +1089,7 @@ class _Fiber:
                     self._run(self.runTick)
             else:
                 if not self.interrupt:
-                    self.interrupt = self.util.left(error)
+                    self.interrupt = self.util["left"](error)
 
                 if self.bracketCount == 0:
                     self.status = _RETURN_
@@ -1042,153 +1114,152 @@ class _Fiber:
 
     def run(self):
         if self.status == _SUSPENDED_:
-            if not __Aff.Scheduler.isDraining():
+            if not Scheduler.isDraining():
 
                 def _1():
                     self._run(self.runTick)
 
-                __Aff.Scheduler.enqueue(_1)
+                Scheduler.enqueue(_1)
             else:
                 self._run(self.runTick)
 
 
-class __Aff:
-    @staticmethod
-    def AffCtr(tag):
-        fn = _AffCtr()
-        fn.tag = tag
-        return fn
-
-    @staticmethod
-    def nonCanceler(error):
-        return _Aff(_PURE_)
-
-    @staticmethod
-    def runEff(eff):
-        try:
-            eff()
-        except Exception as error:
-
-            def _raise():
-                raise error
-
-            t = threading.Thread(target=_raise)
-            t.start()
-
-    @staticmethod
-    def runSync(left, right, eff):
-        try:
-            return right(eff())
-        except Exception as error:
-            return left(error)
-
-    @staticmethod
-    def runAsync(left, eff, k):
-        try:
-            return eff(k)()
-        except Exception as error:
-            k(left(error))()
-            return __Aff.nonCanceler
-
-    @staticmethod
-    def sequential(util, supervisor, par):
-        def _1(cb):
-            def _2():
-                return RunPar(util, supervisor, par, cb)
-
-            return _2
-
-        return _Aff(_ASYNC_, _1)
-
-    EMPTY = _EMPTY_
-    Pure = AffCtr(_PURE_)
-    Throw = AffCtr(_THROW_)
-    Catch = AffCtr(_CATCH_)
-    Sync = AffCtr(_SYNC_)
-    Async = AffCtr(_ASYNC_)
-    Bind = AffCtr(_BIND_)
-    Bracket = AffCtr(_BRACKET_)
-    Fork = AffCtr(_FORK_)
-    Seq = AffCtr(_SEQ_)
-    ParMap = AffCtr(_MAP_)
-    ParApply = AffCtr(_APPLY_)
-    ParAlt = AffCtr(_ALT_)
-    Fiber = _Fiber
-    Scheduler = _Scheduler()
-    Supervisor = _Supervisor
+def AffCtr(tag):
+    fn = _AffCtr()
+    fn.tag = tag
+    return fn
 
 
-_pure = __Aff.Pure
+def nonCanceler(error):
+    return _Aff(_PURE_)
 
-_throwError = __Aff.Throw
+
+def runEff(eff):
+    try:
+        eff()
+    except Exception as error:
+
+        def _raise():
+            raise error
+
+        t = threading.Thread(target=_raise)
+        t.start()
+
+
+def runSync(left, right, eff):
+    try:
+        return right(eff())
+    except Exception as error:
+        return left(error)
+
+
+def runAsync(left, eff, k):
+    try:
+        return eff(k)()
+    except Exception as error:
+        k(left(error))()
+        return nonCanceler
+
+
+def sequential(util, supervisor, par):
+    def _1(cb):
+        def _2():
+            return RunPar(util, supervisor, par, cb)
+
+        return _2
+
+    return _Aff(_ASYNC_, _1)
+
+
+EMPTY = _EMPTY_
+Pure = AffCtr(_PURE_)
+Throw = AffCtr(_THROW_)
+Catch = AffCtr(_CATCH_)
+Sync = AffCtr(_SYNC_)
+Async = AffCtr(_ASYNC_)
+Bind = AffCtr(_BIND_)
+Bracket = AffCtr(_BRACKET_)
+Fork = AffCtr(_FORK_)
+Seq = AffCtr(_SEQ_)
+ParMap = AffCtr(_MAP_)
+ParApply = AffCtr(_APPLY_)
+ParAlt = AffCtr(_ALT_)
+Fiber = _Fiber
+Scheduler = _Scheduler()
+Supervisor = _Supervisor
+
+
+_pure = Pure
+
+_throwError = Throw
 
 
 def _catchError(aff):
     def _1(k):
-        return __Aff.Catch(aff, k)
+        return Catch(aff, k)
 
     return _1
 
 
 def _map(f):
     def _1(aff):
-        if aff.tag == __Aff.Pure.tag:
-            return __Aff.Pure(f(aff._1))
+        if aff.tag == Pure.tag:
+            return Pure(f(aff._1))
         else:
 
             def _2(value):
-                return __Aff.Pure(f(value))
+                return Pure(f(value))
 
-            return __Aff.Bind(aff, _2)
+            return Bind(aff, _2)
 
     return _1
 
 
 def _bind(aff):
     def _1(k):
-        return __Aff.Bind(aff, k)
+        return Bind(aff, k)
 
     return _1
 
 
 def _fork(immediate):
     def _1(aff):
-        return __Aff.Fork(immediate, aff)
+        return Fork(immediate, aff)
 
     return _1
 
 
-_liftEffect = __Aff.Sync
+_liftEffect = Sync
 
 
 def _parAffMap(f):
     def _1(aff):
-        return __Aff.ParMap(f, aff)
+        return ParMap(f, aff)
 
     return _1
 
 
 def _parAffApply(aff1):
     def _1(aff2):
-        return __Aff.ParApply(aff1, aff2)
+        return ParApply(aff1, aff2)
 
     return _1
 
 
 def _parAffAlt(aff1):
     def _1(aff2):
-        return __Aff.ParAlt(aff1, aff2)
+        return ParAlt(aff1, aff2)
 
     return _1
 
 
-makeAff = __Aff.Async
+makeAff = Async
 
 
 def generalBracket(acquire):
     def _1(options):
         def _2(k):
-            return __Aff.Bracket(acquire, options, k)
+            return Bracket(acquire, options, k)
 
         return _2
 
@@ -1197,15 +1268,15 @@ def generalBracket(acquire):
 
 def _makeFiber(util, aff):
     def _1():
-        return __Aff.Fiber(util, None, aff)
+        return Fiber(util, None, aff)
 
     return _1
 
 
 def _makeSupervisedFiber(util, aff):
     def _1():
-        supervisor = __Aff.Supervisor(util)
-        return {"fiber": __Aff.Fiber(util, supervisor, aff), "supervisor": supervisor}
+        supervisor = Supervisor(util)
+        return {"fiber": Fiber(util, supervisor, aff), "supervisor": supervisor}
 
     return _1
 
@@ -1223,7 +1294,7 @@ class _Delay:
         self.timer = None
 
     def setDelay(self, n, k):
-        self.timer = threading.Timer(n * 1000, k)
+        self.timer = threading.Timer(n / 1000, k)
         self.timer.start()
 
     def clearDelay(self):
@@ -1235,17 +1306,17 @@ class _Delay:
             def _2():
                 self.setDelay(ms, cb(right()))
 
-                def _3():
+                def _d_3(*_ignoreArgs):
                     def _4():
                         return right(self.clearDelay())
 
-                    return __Aff.Sync(_4)
+                    return Sync(_4)
 
-                return _3
+                return _d_3
 
             return _2
 
-        return __Aff.Async(_1)
+        return Async(_1)
 
 
-_sequential = __Aff.Seq
+_sequential = Seq
