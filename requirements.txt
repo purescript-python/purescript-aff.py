@@ -24,6 +24,6 @@ six==1.15.0
 smmap==3.0.4
 toml==0.10.1
 typed-ast==1.4.1
-urllib3==1.25.9
+urllib3==1.26.5
 wisepy2==1.1.1
 wrapt==1.12.1
