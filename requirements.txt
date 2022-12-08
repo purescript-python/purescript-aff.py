@@ -3,7 +3,7 @@ astroid==2.4.2
 attrs==19.3.0
 black==19.10b0
 bytecode==0.11.0
-certifi==2020.6.20
+certifi==2022.12.7
 chardet==3.0.4
 click==7.1.2
 gitdb==4.0.5
